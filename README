@@ -1,0 +1,8 @@
+Wraps virtualenvwrapper's mkvirtualenv and provides a very easy way of creating
+development virtual environments for your python projects.
+
+If you cloned some of required packages into the project root and want to use
+the cloned versions instead of installing them via pip into the virtual
+environment, just list these package names in local-requirements.txt - they
+won't be installed, but their paths will be added to PYTHONPATH of the created
+virtual environment.

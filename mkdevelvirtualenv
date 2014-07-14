@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+#
+# Wraps virtualenvwrapper's mkvirtualenv and provides a very easy way of
+# creating development virtual environments for your python projects.
+#
+
+die() {
+    echo "Error:" "$@" >&2
+    exit 1
+}
+
+show_help() {
+    cat <<EOF
+usage: $script_name [-h] [-f] [-p PYTHON] [-a PROJECT] [-n NAME]
+
+Wraps virtualenvwrapper's mkvirtualenv and provides a very easy way of
+creating development virtual environments for your python projects.
+
+If you cloned some of required packages into the project root and want to use
+the cloned versions instead of installing them via pip into the virtual
+environment, just list these package names in local-requirements.txt - they
+won't be installed, but their paths will be added to PYTHONPATH of the created
+virtual environment.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -f, --force           replace existing virtual environment if exists
+  -p PYTHON, --python PYTHON
+                        python interpreter to use (default is python)
+  -a PROJECT, --project PROJECT
+                        path to the project (default is current directory)
+  -n NAME, --name NAME
+                        virtual environment name (default is name of
+                        project's directory)
+EOF
+}
+
+check_option() {
+    [ -n "$2" ] || die "Invalid option $1 value."
+}
+
+parse_args() {
+    eval set -- "$@"
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h) show_help; exit 0;;
+            -f|--force) force=1;;
+            -p|--python) check_option $1 $2; python="$2"; shift;;
+            -a|--project) check_option $1 $2; project_path="$2"; shift;;
+            -n|--name) check_option $1 $2; project_name="$2"; shift;;
+            --) shift; break;;
+            (-*) die "Unrecognized option: $1.";;
+            (*) break;;
+        esac
+        shift
+    done
+
+    [ $# -eq 0 ] || die "Invalid parameter: $1."
+
+    if [[ "$python" != */* ]]; then
+        local python_path
+        python_path="$(which "$python")" || die "Unable to find '$python' executable."
+        python="$python_path"
+    fi
+
+    project_path="$(cd "$project_path" && pwd)"
+    [ "$project_path" != "/" -a "$project_path" != "//" ] || \
+        die "Invalid project path: $project_path."
+
+    if [ -z "$project_name" ]; then
+        project_name="$(basename "$project_path")"
+    else
+        [[ "$project_name" != */* ]] || die "Invalid virtual environment name: $project_name."
+    fi
+}
+
+cleanup() {
+    [ -z "$temp_dir" ] || rm -rf "$temp_dir"
+}
+
+create_virtualenv() {
+    local env_name
+    local existing_envs
+    local virtualenvwrapper
+
+    if [ "$(uname)" = Darwin ]; then
+        virtualenvwrapper="$(which virtualenvwrapper.sh)" || die "Unable to find virtualenvwrapper.sh."
+    elif [ -e /etc/bash_completion.d/virtualenvwrapper ]; then
+        virtualenvwrapper=/etc/bash_completion.d/virtualenvwrapper
+    else
+        die "Unable to find virtualenvwrapper."
+    fi
+
+    set +eu
+    . "$virtualenvwrapper" && existing_envs="$(lsvirtualenv)" || die "Failed to activate virtualenvwrapper."
+    set -eu
+
+    while read env_name; do
+        [ "$env_name" = "$project_name" ] || continue
+        [ "$force" -ne 0 ] || die "Virtual environment '$project_name' already exists."
+
+        set +eu
+        rmvirtualenv "$project_name" || die "Failed to remove virtual environment '$project_name'."
+        set -eu
+    done <<<"$existing_envs"
+
+    set +eu
+    mkvirtualenv -p "$python" -a "$project_path" "$project_name" && workon "$project_name" || \
+        die "Failed to create the virtual environment."
+    set -eu
+
+    configure_virtualenv
+}
+
+configure_virtualenv() {
+    local sed
+    local package_name
+    local package_path
+    local local_packages
+    local requirements_file
+
+    [ "$(uname)" = Darwin ] && sed='sed -E' || sed='sed -r'
+
+    pip install -U pip
+
+    for requirements_file in "requirements.txt" "test-requirements.txt"; do
+        [ ! -e "$project_path/$requirements_file" ] || \
+            cat "$project_path/$requirements_file" >> "$temp_dir/requirements.txt"
+    done
+
+    if [ -e "$project_path/local-requirements.txt" ]; then
+        local_packages="$(< "$project_path/local-requirements.txt")"
+
+        for package_name in $local_packages; do
+            package_path="$project_path/$package_name"
+
+            [ -d "$package_path" ] || \
+                die "Unable to find local package '$package_name' which is listed in $project_path/local-requirements.txt."
+
+            if [ -d "$package_path/src" ]; then
+                add2virtualenv "$package_path/src"
+            else
+                add2virtualenv "$package_path"
+            fi
+
+            [ ! -e "$package_path/requirements.txt" ] || \
+                cp "$package_path/requirements.txt" "$temp_dir/$package_name-requirements.txt"
+        done
+
+        for package_name in $local_packages; do
+            shopt -s nullglob
+            for requirements_file in "$temp_dir/"*requirements.txt; do
+                $sed -i.bak "/^\\s*$package_name([<=>]|\\s*\$)/d" "$requirements_file"
+            done
+            shopt -u nullglob
+        done
+    fi
+
+    shopt -s nullglob
+    for requirements_file in "$temp_dir/"*-requirements.txt; do
+        pip install -r "$requirements_file"
+    done
+    shopt -u nullglob
+
+    # The project may override requirements, so install it at the very end
+    pip install -r "$temp_dir/requirements.txt"
+
+    add2virtualenv "$project_path"
+}
+
+set -eu
+script_name="$0"
+
+force=0
+python="python"
+project_path="$PWD"
+project_name=""
+
+parse_args "$(getopt -n "$0" -o hfp:a: -l help,force,python:,project: -- "$@")"
+
+temp_dir=""
+trap cleanup EXIT
+trap "exit 1" SIGINT SIGTERM SIGQUIT
+
+temp_dir="$(mktemp -d "/var/tmp/mkdevelvirtualenv.XXXXXX")"
+
+create_virtualenv
