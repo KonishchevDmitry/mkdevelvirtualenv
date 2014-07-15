@@ -11,7 +11,7 @@ die() {
 
 show_help() {
     cat <<EOF
-usage: $script_name [-h] [-f] [-p PYTHON] [-a PROJECT] [-n NAME]
+usage: $script_name [-h] [-f] [-a PROJECT] [-n NAME] [-p PYTHON] [-v VIRTUALENV]
 
 Wraps virtualenvwrapper's mkvirtualenv and provides a very easy way of
 creating development virtual environments for your python projects.
@@ -25,13 +25,15 @@ virtual environment.
 optional arguments:
   -h, --help            show this help message and exit
   -f, --force           replace existing virtual environment if exists
-  -p PYTHON, --python PYTHON
-                        python interpreter to use (default is python)
   -a PROJECT, --project PROJECT
                         path to the project (default is current directory)
   -n NAME, --name NAME
                         virtual environment name (default is name of
                         project's directory)
+  -p PYTHON, --python PYTHON
+                        python interpreter to use (default is python)
+  -v VIRTUALENV, --virtualenv VIRTUALENV
+                        virtualenv to use (default is virtualenv)
 EOF
 }
 
@@ -46,9 +48,10 @@ parse_args() {
         case "$1" in
             -h) show_help; exit 0;;
             -f|--force) force=1;;
-            -p|--python) check_option $1 $2; python="$2"; shift;;
             -a|--project) check_option $1 $2; project_path="$2"; shift;;
             -n|--name) check_option $1 $2; project_name="$2"; shift;;
+            -p|--python) check_option $1 $2; python="$2"; shift;;
+            -v|--virtualenv) check_option $1 $2; virtualenv="$2"; shift;;
             --) shift; break;;
             (-*) die "Unrecognized option: $1.";;
             (*) break;;
@@ -58,12 +61,6 @@ parse_args() {
 
     [ $# -eq 0 ] || die "Invalid parameter: $1."
 
-    if [[ "$python" != */* ]]; then
-        local python_path
-        python_path="$(which "$python")" || die "Unable to find '$python' executable."
-        python="$python_path"
-    fi
-
     project_path="$(cd "$project_path" && pwd)"
     [ "$project_path" != "/" -a "$project_path" != "//" ] || \
         die "Invalid project path: $project_path."
@@ -72,6 +69,12 @@ parse_args() {
         project_name="$(basename "$project_path")"
     else
         [[ "$project_name" != */* ]] || die "Invalid virtual environment name: $project_name."
+    fi
+
+    if [[ "$python" != */* ]]; then
+        local python_path
+        python_path="$(which "$python")" || die "Unable to find '$python' executable."
+        python="$python_path"
     fi
 }
 
@@ -84,16 +87,23 @@ create_virtualenv() {
     local existing_envs
     local virtualenvwrapper
 
-    if [ "$(uname)" = Darwin ]; then
-        virtualenvwrapper="$(which virtualenvwrapper.sh)" || die "Unable to find virtualenvwrapper.sh."
-    elif [ -e /etc/bash_completion.d/virtualenvwrapper ]; then
-        virtualenvwrapper=/etc/bash_completion.d/virtualenvwrapper
-    else
-        die "Unable to find virtualenvwrapper."
+    if ! type -t mkvirtualenv > /dev/null; then
+        if [ "$(uname)" = Darwin ]; then
+            virtualenvwrapper="$(which virtualenvwrapper.sh)" || die "Unable to find virtualenvwrapper.sh."
+        elif [ -e /etc/bash_completion.d/virtualenvwrapper ]; then
+            virtualenvwrapper=/etc/bash_completion.d/virtualenvwrapper
+        else
+            die "Unable to find virtualenvwrapper."
+        fi
+
+        set +eu;
+            . "$virtualenvwrapper" || die "Failed to activate virtualenvwrapper.";
+        set -eu
     fi
 
-    set +eu
-    . "$virtualenvwrapper" && existing_envs="$(lsvirtualenv)" || die "Failed to activate virtualenvwrapper."
+    set +eu;
+        existing_envs="$(lsvirtualenv)" || \
+            die "Unable to get a list of existing virtual environments.";
     set -eu
 
     while read env_name; do
@@ -101,13 +111,13 @@ create_virtualenv() {
         [ "$force" -ne 0 ] || die "Virtual environment '$project_name' already exists."
 
         set +eu
-        rmvirtualenv "$project_name" || die "Failed to remove virtual environment '$project_name'."
+            rmvirtualenv "$project_name" || die "Failed to remove virtual environment '$project_name'."
         set -eu
     done <<<"$existing_envs"
 
     set +eu
-    mkvirtualenv -p "$python" -a "$project_path" "$project_name" && workon "$project_name" || \
-        die "Failed to create the virtual environment."
+        VIRTUALENVWRAPPER_VIRTUALENV="$virtualenv" mkvirtualenv -p "$python" -a "$project_path" "$project_name" && \
+            workon "$project_name" || die "Failed to create the virtual environment."
     set -eu
 
     configure_virtualenv
@@ -169,20 +179,22 @@ configure_virtualenv() {
     add2virtualenv "$project_path"
 }
 
+
 set -eu
 script_name="$0"
 
 force=0
 python="python"
+virtualenv="virtualenv"
 project_path="$PWD"
 project_name=""
 
-parse_args "$(getopt -n "$0" -o hfp:a: -l help,force,python:,project: -- "$@")"
+parse_args "$(getopt -n "$0" -o hfa:n:p:v: -l help,force,project:,name:,python:,virtualenv: -- "$@")"
+[ ! -v VIRTUAL_ENV ] || die "Activated virtual environment detected. Please deactivate it before running this script."
 
 temp_dir=""
 trap cleanup EXIT
 trap "exit 1" SIGINT SIGTERM SIGQUIT
-
 temp_dir="$(mktemp -d "/var/tmp/mkdevelvirtualenv.XXXXXX")"
 
 create_virtualenv
