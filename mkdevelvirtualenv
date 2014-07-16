@@ -136,7 +136,7 @@ configure_virtualenv() {
 
     for requirements_file in "requirements.txt" "test-requirements.txt"; do
         [ ! -e "$project_path/$requirements_file" ] || \
-            cat "$project_path/$requirements_file" >> "$temp_dir/requirements.txt"
+            { echo && cat "$project_path/$requirements_file"; } >> "$temp_dir/requirements.txt"
     done
 
     if [ -e "$project_path/local-requirements.txt" ]; then
