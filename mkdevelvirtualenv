@@ -136,7 +136,7 @@ configure_virtualenv() {
 
     for requirements_file in "requirements.txt" "test-requirements.txt"; do
         [ ! -e "$project_path/$requirements_file" ] || \
-            { echo && cat "$project_path/$requirements_file"; } >> "$temp_dir/requirements.txt"
+            cp "$project_path/$requirements_file" "$temp_dir/project-$requirements_file"
     done
 
     if [ -e "$project_path/local-requirements.txt" ]; then
@@ -155,7 +155,7 @@ configure_virtualenv() {
             fi
 
             [ ! -e "$package_path/requirements.txt" ] || \
-                cp "$package_path/requirements.txt" "$temp_dir/$package_name-requirements.txt"
+                cp "$package_path/requirements.txt" "$temp_dir/package-$package_name-requirements.txt"
         done
 
         for package_name in $local_packages; do
@@ -168,13 +168,11 @@ configure_virtualenv() {
     fi
 
     shopt -s nullglob
-    for requirements_file in "$temp_dir/"*-requirements.txt; do
+    # The project may override requirements, so install its requirements at the very end
+    for requirements_file in "$temp_dir/"package-*-requirements.txt "$temp_dir/"project-*requirements.txt; do
         pip install -r "$requirements_file"
     done
     shopt -u nullglob
-
-    # The project may override requirements, so install it at the very end
-    pip install -r "$temp_dir/requirements.txt"
 
     add2virtualenv "$project_path"
 }
