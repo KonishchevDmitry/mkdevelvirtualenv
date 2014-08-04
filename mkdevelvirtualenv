@@ -34,6 +34,9 @@ optional arguments:
                         python interpreter to use (default is python)
   -v VIRTUALENV, --virtualenv VIRTUALENV
                         virtualenv to use (default is virtualenv)
+  -s, --system-site-packages
+                        give the virtual environment access to the global
+                        site-packages
 EOF
 }
 
@@ -52,6 +55,7 @@ parse_args() {
             -n|--name) check_option $1 $2; project_name="$2"; shift;;
             -p|--python) check_option $1 $2; python="$2"; shift;;
             -v|--virtualenv) check_option $1 $2; virtualenv="$2"; shift;;
+            -s|--system-site-packages) virtualenv_options="$virtualenv_options --system-site-packages"; shift;;
             --) shift; break;;
             (-*) die "Unrecognized option: $1.";;
             (*) break;;
@@ -116,8 +120,9 @@ create_virtualenv() {
     done <<<"$existing_envs"
 
     set +eu
-        VIRTUALENVWRAPPER_VIRTUALENV="$virtualenv" mkvirtualenv -p "$python" -a "$project_path" "$project_name" && \
-            workon "$project_name" || die "Failed to create the virtual environment."
+        VIRTUALENVWRAPPER_VIRTUALENV="$virtualenv" VIRTUALENVWRAPPER_VIRTUALENV_ARGS="$virtualenv_options" \
+            mkvirtualenv -p "$python" -a "$project_path" "$project_name" && \
+                workon "$project_name" || die "Failed to create the virtual environment."
     set -eu
 
     configure_virtualenv
@@ -182,12 +187,13 @@ set -eu
 script_name="$0"
 
 force=0
-python="python"
-virtualenv="virtualenv"
 project_path="$PWD"
 project_name=""
+python="python"
+virtualenv="virtualenv"
+virtualenv_options=""
 
-parse_args "$(getopt -n "$0" -o hfa:n:p:v: -l help,force,project:,name:,python:,virtualenv: -- "$@")"
+parse_args "$(getopt -n "$0" -o hfa:n:p:v:s -l help,force,project:,name:,python:,virtualenv:,system-site-packages -- "$@")"
 [ ! -v VIRTUAL_ENV ] || die "Activated virtual environment detected. Please deactivate it before running this script."
 
 temp_dir=""
