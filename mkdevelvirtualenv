@@ -50,7 +50,7 @@ parse_args() {
 
     while [ $# -gt 0 ]; do
         case "$1" in
-            -h) show_help; exit 0;;
+            -h|--help) show_help; exit 0;;
             -f|--force) force=1;;
             -a|--project) check_option $1 $2; project_path="$2"; shift;;
             -n|--name) check_option $1 $2; project_name="$2"; shift;;
