@@ -11,7 +11,7 @@ die() {
 
 show_help() {
     cat <<EOF
-usage: $script_name [-h] [-f] [-a PROJECT] [-n NAME] [-p PYTHON] [-v VIRTUALENV]
+usage: $script_name [-h] [-f] [-a PROJECT] [-A PROJECT]... [-n NAME] [-p PYTHON] [-v VIRTUALENV]
 
 Wraps virtualenvwrapper's mkvirtualenv and provides a very easy way of
 creating development virtual environments for your python projects.
@@ -27,6 +27,8 @@ optional arguments:
   -f, --force           replace existing virtual environment if exists
   -a PROJECT, --project PROJECT
                         path to the project (default is current directory)
+  -A PROJECT, --extra-project PROJECT
+                        path to an additional project to add to the virtual environment
   -n NAME, --name NAME
                         virtual environment name (default is name of
                         project's directory)
@@ -54,6 +56,7 @@ parse_args() {
             -f|--force) force=1;;
             -a|--project) check_option $1 $2; project_path="$2"; shift;;
             -n|--name) check_option $1 $2; project_name="$2"; shift;;
+            -A|--extra-project) check_option $1 $2; extra_project_paths+=("$2"); shift;;
             -p|--python) check_option $1 $2; python="$2"; shift;;
             -v|--virtualenv) check_option $1 $2; virtualenv="$2"; shift;;
             -s|--system-site-packages) virtualenv_options="$virtualenv_options --system-site-packages"; shift;;
@@ -131,19 +134,39 @@ create_virtualenv() {
 }
 
 configure_virtualenv() {
+    set +u
+        pip install "${pip_options[@]}" -U pip
+    set -u
+
+    local cur_project_path
+
+    # The main project may override requirements, so configure the extra projects first
+    if [ ${#extra_project_paths[@]} -ne 0 ]; then
+        for cur_project_path in "${extra_project_paths[@]}"; do
+            configure_project "$cur_project_path"
+        done
+    fi
+
+    configure_project "$project_path"
+}
+
+configure_project() {
     local sed
+    local project_path
     local package_name
     local package_path
     local local_packages
     local requirements_file
 
+    project_path="$1"
+
     [ "$(uname)" = Darwin ] && sed='sed -E' || sed='sed -r'
 
-    set +u
-        pip install "${pip_options[@]}" -U pip
-    set -u
+    echo "Configuring $project_path project..."
 
-    for requirements_file in "requirements.txt" "test-requirements.txt"; do
+    rm -f "$temp_dir"/*requirements.txt
+
+    for requirements_file in requirements.txt dev-requirements.txt test-requirements.txt; do
         [ ! -e "$project_path/$requirements_file" ] || \
             cp "$project_path/$requirements_file" "$temp_dir/project-$requirements_file"
     done
@@ -188,19 +211,19 @@ configure_virtualenv() {
     add2virtualenv "$project_path"
 }
 
-
 set -eu
 script_name="$0"
 
 force=0
 project_path="$PWD"
 project_name=""
+extra_project_paths=()
 python="python"
 virtualenv="virtualenv"
 virtualenv_options=""
 pip_options=()
 
-parse_args "$(getopt -n "$0" -o hfa:n:p:v:si: -l help,force,project:,name:,python:,virtualenv:,system-site-packages,index-url: -- "$@")"
+parse_args "$(getopt -n "$0" -o hfa:n:A:p:v:si: -l help,force,project:,name:,extra-project:,python:,virtualenv:,system-site-packages,index-url: -- "$@")"
 [ ! -v VIRTUAL_ENV ] || die "Activated virtual environment detected. Please deactivate it before running this script."
 
 temp_dir=""
