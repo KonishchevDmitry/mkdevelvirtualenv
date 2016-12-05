@@ -138,16 +138,26 @@ configure_virtualenv() {
         pip install "${pip_options[@]}" -U pip
     set -u
 
-    local cur_project_path
+    local extra_project_path
+    local extra_project_name
+    local locally_provided_requirements=""
 
-    # The main project may override requirements, so configure the extra projects first
     if [ ${#extra_project_paths[@]} -ne 0 ]; then
-        for cur_project_path in "${extra_project_paths[@]}"; do
-            configure_project "$cur_project_path"
+        # Collecting a list of requirements provided by extra projects
+        for extra_project_path in "${extra_project_paths[@]}"; do
+            if [ -e "$extra_project_path/setup.py" ]; then
+                extra_project_name="$(cd "$extra_project_path" && "$python" setup.py --name)"
+                locally_provided_requirements="$locally_provided_requirements $extra_project_name"
+            fi
+        done
+
+        # The main project may override requirements, so configure the extra projects first
+        for extra_project_path in "${extra_project_paths[@]}"; do
+            configure_project "$extra_project_path" "$locally_provided_requirements"
         done
     fi
 
-    configure_project "$project_path"
+    configure_project "$project_path" "$locally_provided_requirements"
 }
 
 configure_project() {
@@ -156,9 +166,11 @@ configure_project() {
     local package_name
     local package_path
     local local_packages
-    local requirements_file
+    local requirements_path
+    local locally_provided_requirements
 
     project_path="$1"
+    locally_provided_requirements="$2"
 
     [ "$(uname)" = Darwin ] && sed='sed -E' || sed='sed -r'
 
@@ -166,9 +178,9 @@ configure_project() {
 
     rm -f "$temp_dir"/*requirements.txt
 
-    for requirements_file in requirements.txt dev-requirements.txt test-requirements.txt; do
-        [ ! -e "$project_path/$requirements_file" ] || \
-            cp "$project_path/$requirements_file" "$temp_dir/project-$requirements_file"
+    for requirements_path in requirements.txt dev-requirements.txt test-requirements.txt; do
+        [ ! -e "$project_path/$requirements_path" ] || \
+            cp "$project_path/$requirements_path" "$temp_dir/project-$requirements_path"
     done
 
     if [ -e "$project_path/local-requirements.txt" ]; then
@@ -190,22 +202,22 @@ configure_project() {
                 cp "$package_path/requirements.txt" "$temp_dir/package-$package_name-requirements.txt"
         done
 
-        for package_name in $local_packages; do
-            shopt -s nullglob
-            for requirements_file in "$temp_dir/"*requirements.txt; do
-                $sed -i.bak "/^\\s*$package_name([<=>]|\\s*\$)/d" "$requirements_file"
-            done
-            shopt -u nullglob
-        done
+        locally_provided_requirements="$locally_provided_requirements $local_packages"
     fi
 
     shopt -s nullglob
-    # The project may override requirements, so install its requirements at the very end
-    for requirements_file in "$temp_dir/"package-*-requirements.txt "$temp_dir/"project-*requirements.txt; do
-        set +u
-            pip install "${pip_options[@]}" -r "$requirements_file"
-        set -u
-    done
+        for package_name in $locally_provided_requirements; do
+            for requirements_path in "$temp_dir/"*requirements.txt; do
+                $sed -i.bak "/^\\s*${package_name/./\\.}([<=>]|\\s*\$)/d" "$requirements_path"
+            done
+        done
+
+        # The project may override requirements, so install its requirements at the very end
+        for requirements_path in "$temp_dir/"package-*-requirements.txt "$temp_dir/"project-*requirements.txt; do
+            set +u
+                pip install "${pip_options[@]}" -r "$requirements_path"
+            set -u
+        done
     shopt -u nullglob
 
     add2virtualenv "$project_path"
