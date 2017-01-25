@@ -11,7 +11,7 @@ die() {
 
 show_help() {
     cat <<EOF
-usage: $script_name [-h] [-f] [-a PROJECT] [-A PROJECT]... [-n NAME] [-p PYTHON] [-v VIRTUALENV]
+Usage: $script_name [options] [-a PROJECT] [-A PROJECT]...
 
 Wraps virtualenvwrapper's mkvirtualenv and provides a very easy way of
 creating development virtual environments for your python projects.
@@ -24,22 +24,23 @@ virtual environment.
 
 optional arguments:
   -h, --help            show this help message and exit
-  -f, --force           replace existing virtual environment if exists
   -a PROJECT, --project PROJECT
                         path to the project (default is current directory)
   -A PROJECT, --extra-project PROJECT
                         path to an additional project to add to the virtual environment
-  -n NAME, --name NAME
-                        virtual environment name (default is name of
-                        project's directory)
+  -n NAME, --name NAME  virtual environment name (default is name of project's directory)
+  --force               replace existing virtual environment if exists
   -p PYTHON, --python PYTHON
                         python interpreter to use (default is python)
   -v VIRTUALENV, --virtualenv VIRTUALENV
                         virtualenv to use (default is virtualenv)
   -s, --system-site-packages
-                        give the virtual environment access to the global
-                        site-packages
+                        give the virtual environment access to the global site-packages
   -i, --index-url URL   base URL of Python Package Index
+  --no-index            ignore package index (only looking at --find-links URLs instead)
+  -f, --find-links URL  if a URL or path to an html file, then parse for links to archives,
+                        if a local path or file:// URL that's a directory, then look for
+                        archives in the directory listing
 EOF
 }
 
@@ -53,14 +54,15 @@ parse_args() {
     while [ $# -gt 0 ]; do
         case "$1" in
             -h|--help) show_help; exit 0;;
-            -f|--force) force=1;;
             -a|--project) check_option $1 $2; project_path="$2"; shift;;
             -n|--name) check_option $1 $2; project_name="$2"; shift;;
             -A|--extra-project) check_option $1 $2; extra_project_paths+=("$2"); shift;;
+            --force) force=1;;
             -p|--python) check_option $1 $2; python="$2"; shift;;
             -v|--virtualenv) check_option $1 $2; virtualenv="$2"; shift;;
-            -s|--system-site-packages) virtualenv_options="$virtualenv_options --system-site-packages"; shift;;
-            -i|--index-url) check_option $1 $2; pip_options+=("-i" "$2"); shift;;
+            -s|--system-site-packages) virtualenv_options="$virtualenv_options --system-site-packages";;
+            --no-index) pip_options+=("$1") ;;
+            -i|--index-url|-f|--find-links) check_option $1 $2; pip_options+=("$1" "$2"); shift;;
             --) shift; break;;
             (-*) die "Unrecognized option: $1.";;
             (*) break;;
@@ -235,7 +237,7 @@ virtualenv="virtualenv"
 virtualenv_options=""
 pip_options=()
 
-parse_args "$(getopt -n "$0" -o hfa:n:A:p:v:si: -l help,force,project:,name:,extra-project:,python:,virtualenv:,system-site-packages,index-url: -- "$@")"
+parse_args "$(getopt -n "$0" -o ha:n:A:p:v:si:f: -l help,force,project:,name:,extra-project:,python:,virtualenv:,system-site-packages,index-url:,no-index,find-links: -- "$@")"
 [ ! -v VIRTUAL_ENV ] || die "Activated virtual environment detected. Please deactivate it before running this script."
 
 temp_dir=""
