@@ -37,10 +37,11 @@ optional arguments:
   -s, --system-site-packages
                         give the virtual environment access to the global site-packages
   -i, --index-url URL   base URL of Python Package Index
-  --no-index            ignore package index (only looking at --find-links URLs instead)
   -f, --find-links URL  if a URL or path to an html file, then parse for links to archives,
                         if a local path or file:// URL that's a directory, then look for
                         archives in the directory listing
+  --no-index            ignore package index (only looking at --find-links URLs instead)
+  --no-cache-dir        disable the cache
 EOF
 }
 
@@ -53,19 +54,71 @@ parse_args() {
 
     while [ $# -gt 0 ]; do
         case "$1" in
-            -h|--help) show_help; exit 0;;
-            -a|--project) check_option $1 $2; project_path="$2"; shift;;
-            -n|--name) check_option $1 $2; project_name="$2"; shift;;
-            -A|--extra-project) check_option $1 $2; extra_project_paths+=("$2"); shift;;
-            --force) force=1;;
-            -p|--python) check_option $1 $2; python="$2"; shift;;
-            -v|--virtualenv) check_option $1 $2; virtualenv="$2"; shift;;
-            -s|--system-site-packages) virtualenv_options="$virtualenv_options --system-site-packages";;
-            --no-index) pip_options+=("$1") ;;
-            -i|--index-url|-f|--find-links) check_option $1 $2; pip_options+=("$1" "$2"); shift;;
-            --) shift; break;;
-            (-*) die "Unrecognized option: $1.";;
-            (*) break;;
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            -a|--project)
+                check_option $1 $2
+                project_path="$2"
+                shift
+                ;;
+            -n|--name)
+                check_option $1 $2
+                project_name="$2"
+                shift
+                ;;
+            -A|--extra-project)
+                check_option $1 $2
+                extra_project_paths+=("$2")
+                shift
+                ;;
+            --force)
+                force=1
+                ;;
+            -p|--python)
+                check_option $1 $2
+                python="$2"
+                shift
+                ;;
+            -v|--virtualenv)
+                check_option $1 $2
+                virtualenv="$2"
+                shift
+                ;;
+            -s|--system-site-packages)
+                virtualenv_options="$virtualenv_options --system-site-packages"
+                ;;
+            -i|--index-url)
+                check_option $1 $2
+                pip_options+=("$1" "$2");
+                distutils_config="$distutils_config"$'\n'"index-url = $2"
+                shift
+                ;;
+            -f|--find-links)
+                check_option $1 $2
+                pip_options+=("$1" "$2");
+                distutils_config="$distutils_config"$'\n'"find-links = $2"
+                shift
+                ;;
+            --no-index)
+                virtualenv_options="$virtualenv_options --never-download"
+                pip_options+=("$1")
+                distutils_config="$distutils_config"$'\n'"allow-hosts = localhost"
+                ;;
+            --no-cache-dir)
+                pip_options+=("$1")
+                ;;
+            --)
+                shift
+                break
+                ;;
+            (-*)
+                die "Unrecognized option: $1."
+                ;;
+            (*)
+                break
+                ;;
         esac
         shift
     done
@@ -136,6 +189,24 @@ create_virtualenv() {
 }
 
 configure_virtualenv() {
+    local distutils_config_path
+
+    if [ -n "$distutils_config" ]; then
+        # setup.py's setup_requires keyword (which is used by some packages) uses easy_install instead of pip which
+        # makes it to ignore pip's --index-url, --no-index and --find-links options, so we have to configure them using
+        # distutils config file (see https://pip.pypa.io/en/latest/reference/pip_install.html#controlling-setup-requires)
+        distutils_config_path="$(python -c '
+import os.path
+import distutils
+print(os.path.join(os.path.dirname(distutils.__file__), "distutils.cfg"))
+        ')"
+        [ -e "$distutils_config_path" ] || die "Unable to find virtualenv's distutils.cfg file."
+
+        echo "Patching $distutils_config_path..."
+        mv "$distutils_config_path"{,.orig}
+        cat > "$distutils_config_path" <<< "[easy_install]$distutils_config"
+    fi
+
     set +u
         pip install "${pip_options[@]}" -U pip
     set -u
@@ -160,6 +231,11 @@ configure_virtualenv() {
     fi
 
     configure_project "$project_path" "$locally_provided_requirements"
+
+    if [ -n "$distutils_config" ]; then
+        echo "Reverting $distutils_config_path..."
+        mv "$distutils_config_path"{.orig,}
+    fi
 }
 
 configure_project() {
@@ -236,8 +312,9 @@ python="python"
 virtualenv="virtualenv"
 virtualenv_options=""
 pip_options=()
+distutils_config=""
 
-parse_args "$(getopt -n "$0" -o ha:n:A:p:v:si:f: -l help,force,project:,name:,extra-project:,python:,virtualenv:,system-site-packages,index-url:,no-index,find-links: -- "$@")"
+parse_args "$(getopt -n "$0" -o ha:n:A:p:v:si:f: -l help,force,project:,name:,extra-project:,python:,virtualenv:,system-site-packages,index-url:,find-links:,no-index,no-cache-dir -- "$@")"
 [ ! -v VIRTUAL_ENV ] || die "Activated virtual environment detected. Please deactivate it before running this script."
 
 temp_dir=""
