@@ -137,7 +137,7 @@ parse_args() {
 
     if [[ "$python" != */* ]]; then
         local python_path
-        python_path="$(which "$python")" || die "Unable to find '$python' executable."
+        python_path="$(which "$python" 2>/dev/null)" || die "Unable to find '$python' executable."
         python="$python_path"
     fi
 }
@@ -152,9 +152,9 @@ create_virtualenv() {
     local virtualenvwrapper
 
     if ! type -t mkvirtualenv > /dev/null; then
-        if [ "$(uname)" = Darwin ]; then
-            virtualenvwrapper="$(which virtualenvwrapper.sh)" || die "Unable to find virtualenvwrapper.sh."
-        elif [ -e /etc/bash_completion.d/virtualenvwrapper ]; then
+        if virtualenvwrapper="$(which virtualenvwrapper.sh 2>/dev/null)"; then
+            :
+        elif [ "$(uname)" != Darwin -a -e /etc/bash_completion.d/virtualenvwrapper ]; then
             virtualenvwrapper=/etc/bash_completion.d/virtualenvwrapper
         else
             die "Unable to find virtualenvwrapper."
