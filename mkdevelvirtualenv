@@ -245,18 +245,20 @@ configure_project() {
     local package_path
     local local_packages
     local requirements_path
+    local os_requirements_path
     local locally_provided_requirements
 
     project_path="$1"
     locally_provided_requirements="$2"
 
+    os_requirements_path="$(uname | tr '[:upper:]' '[:lower:]')-requirements.txt"
     [ "$(uname)" = Darwin ] && sed='sed -E' || sed='sed -r'
 
     echo "Configuring $project_path project..."
 
     rm -f "$temp_dir"/*requirements.txt
 
-    for requirements_path in requirements.txt dev-requirements.txt test-requirements.txt; do
+    for requirements_path in requirements.txt $os_requirements_path dev-requirements.txt test-requirements.txt; do
         [ ! -e "$project_path/$requirements_path" ] || \
             cp "$project_path/$requirements_path" "$temp_dir/project-$requirements_path"
     done
