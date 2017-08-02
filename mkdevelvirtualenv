@@ -149,9 +149,21 @@ cleanup() {
 create_virtualenv() {
     local env_name
     local existing_envs
-    local virtualenvwrapper
 
-    if ! type -t mkvirtualenv > /dev/null; then
+    if [ -n "${PYENV_SHELL:-}" ]; then
+        echo "Using pyenv-virtualenvwrapper."
+
+        PYENV_VERSION="$("$python" -c 'print(".".join(map(str, __import__("sys").version_info[:3])))')"
+        export PYENV_VERSION
+
+        set +eu;
+            eval "$(pyenv init -)" || die "Failed to activate pyenv."
+            pyenv virtualenvwrapper || die "Failed to activate pyenv-virtualenvwrapper."
+        set -eu
+    else
+        echo "Using virtualenvwrapper."
+
+        local virtualenvwrapper
         if virtualenvwrapper="$(which virtualenvwrapper.sh 2>/dev/null)"; then
             :
         elif [ "$(uname)" != Darwin -a -e /etc/bash_completion.d/virtualenvwrapper ]; then
@@ -161,7 +173,7 @@ create_virtualenv() {
         fi
 
         set +eu;
-            . "$virtualenvwrapper" || die "Failed to activate virtualenvwrapper.";
+            . "$virtualenvwrapper" || die "Failed to activate virtualenvwrapper."
         set -eu
     fi
 
