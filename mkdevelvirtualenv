@@ -335,7 +335,7 @@ virtualenv_options=""
 pip_options=()
 distutils_config=""
 
-parse_args "$(getopt -n "$0" -o ha:n:A:p:v:si:f: -l help,force,project:,name:,extra-project:,python:,virtualenv:,system-site-packages,index-url:,find-links:,no-index,no-cache-dir -- "$@")"
+parse_args "$(getopt -n "$0" -o ha:n:A:p:v:w:si:f: -l help,force,project:,name:,extra-project:,python:,virtualenv:,virtualenvwrapper:,system-site-packages,index-url:,find-links:,no-index,no-cache-dir -- "$@")"
 [ ! -v VIRTUAL_ENV ] || die "Activated virtual environment detected. Please deactivate it before running this script."
 
 temp_dir=""
