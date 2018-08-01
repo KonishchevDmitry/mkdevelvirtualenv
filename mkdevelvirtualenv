@@ -34,6 +34,8 @@ optional arguments:
                         python interpreter to use (default is python)
   -v VIRTUALENV, --virtualenv VIRTUALENV
                         virtualenv to use (default is virtualenv)
+  -w VIRTUALENVWRAPPER, --virtualenvwrapper
+                        virtualenvwrapper to use (default is virtualenvwrapper.sh)
   -s, --system-site-packages
                         give the virtual environment access to the global site-packages
   -i, --index-url URL   base URL of Python Package Index
@@ -84,6 +86,11 @@ parse_args() {
             -v|--virtualenv)
                 check_option $1 $2
                 virtualenv="$2"
+                shift
+                ;;
+            -w|--virtualenvwrapper)
+                check_option $1 $2
+                virtualenvwrapper="$2"
                 shift
                 ;;
             -s|--system-site-packages)
@@ -163,8 +170,7 @@ create_virtualenv() {
     else
         echo "Using virtualenvwrapper."
 
-        local virtualenvwrapper
-        if virtualenvwrapper="$(which virtualenvwrapper.sh 2>/dev/null)"; then
+        if virtualenvwrapper="$(which "$virtualenvwrapper" 2>/dev/null)"; then
             :
         elif [ "$(uname)" != Darwin -a -e /etc/bash_completion.d/virtualenvwrapper ]; then
             virtualenvwrapper=/etc/bash_completion.d/virtualenvwrapper
@@ -324,6 +330,7 @@ project_name=""
 extra_project_paths=()
 python="python"
 virtualenv="virtualenv"
+virtualenvwrapper="virtualenvwrapper.sh"
 virtualenv_options=""
 pip_options=()
 distutils_config=""
